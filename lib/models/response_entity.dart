@@ -1,19 +1,21 @@
+import 'package:rest_api/models/response_info.dart';
+
 class ResponseEntity<T> {
   T? data;
   bool _hasError = true;
-  String message;
+  ResponseInfo responseInfo;
 
   bool get hasError => _hasError;
 
   ResponseEntity.complete({
     required this.data,
-    this.message = '',
+    required this.responseInfo,
   }) {
     _hasError = false;
   }
 
   ResponseEntity.withError({
-    required this.message,
+    required this.responseInfo,
     this.data,
   });
 }

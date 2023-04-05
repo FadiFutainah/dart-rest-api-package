@@ -4,18 +4,21 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:rest_api/models/response_entity.dart';
+import 'package:rest_api/models/response_info.dart';
 import 'package:rest_api/rest_api.dart';
 import 'package:rest_api/extension/request_option.dart';
 
-import 'errors/app_exceptions.dart';
+import 'data/token.dart';
 
 class RestApiService extends Rest {
   Dio? _dio;
 
   RestApiService(
     String serverAddress, {
+    TokenType tokenType = TokenType.access,
     Duration timeoutDuration = const Duration(seconds: 80),
-  }) : super(serverAddress, timeoutDuration) {
+    Map<String, String>? requestHeaders,
+  }) : super(serverAddress, timeoutDuration, tokenType, requestHeaders) {
     _dio = Dio(BaseOptions(baseUrl: serverAddress));
   }
 
@@ -24,38 +27,48 @@ class RestApiService extends Rest {
     String endpoint,
     HttpRequestType requestType, {
     Map<String, dynamic>? body,
-    Map<String, String> headers = Rest.defaultHeaders,
+    Map<String, String>? headers,
     bool sendToken = false,
     bool encode = true,
     bool decode = true,
-    TokenType tokenType = TokenType.access,
+    Map<String, dynamic>? queryParameters,
   }) async {
     try {
       RequestOptions requestOptions = RequestOptions(
         path: endpoint,
+        queryParameters: queryParameters,
         data: encode ? jsonEncode(body) : body,
-        headers: headers,
-        receiveTimeout: timeoutDuration.inSeconds,
+        headers: headers ?? requestHeaders,
       );
       if (sendToken) {
-        requestOptions.addTokenHeader(tokenType);
+        String token = await Token().accessToken ?? '';
+
+        requestOptions.headers[HttpHeaders.authorizationHeader] =
+            '${tokenType.name} $token';
       }
-      dynamic data = await _getResponse(requestType, requestOptions, decode);
-      return ResponseEntity.complete(data: data);
+      Response? response = await _getResponse(requestType, requestOptions);
+      dynamic data = _returnResponse(response!, decode);
+      ResponseInfo responseInfo = ResponseInfo(
+        statusCode: response.statusCode,
+        message: response.statusMessage,
+      );
+      return ResponseEntity.complete(data: data, responseInfo: responseInfo);
     } catch (e) {
-      String message = _getExceptionMessage(e);
-      return ResponseEntity.withError(message: message);
+      ResponseInfo info = _getResponseInfo(e);
+      return ResponseEntity.withError(responseInfo: info);
     }
   }
 
-  dynamic _getResponse(
-      HttpRequestType type, RequestOptions options, bool decode) async {
+  Future<Response?> _getResponse(
+      HttpRequestType type, RequestOptions options) async {
     Response? response;
+    print(options.headers[HttpHeaders.authorizationHeader]);
     switch (type) {
       case HttpRequestType.GET:
         response = await _dio!.get(
           options.path,
           options: Options(headers: options.headers),
+          queryParameters: options.queryParameters,
         );
         break;
       case HttpRequestType.POST:
@@ -63,18 +76,21 @@ class RestApiService extends Rest {
           options.path,
           options: Options(headers: options.headers),
           data: options.data,
+          queryParameters: options.queryParameters,
         );
         break;
       case HttpRequestType.DELETE:
         response = await _dio!.delete(
           options.path,
           options: Options(headers: options.headers),
+          queryParameters: options.queryParameters,
         );
         break;
       case HttpRequestType.PUT:
         response = await _dio!.put(
           options.path,
           options: Options(headers: options.headers),
+          queryParameters: options.queryParameters,
           data: options.data,
         );
         break;
@@ -82,6 +98,7 @@ class RestApiService extends Rest {
         response = await _dio!.patch(
           options.path,
           options: Options(headers: options.headers),
+          queryParameters: options.queryParameters,
           data: options.data,
         );
         break;
@@ -89,12 +106,13 @@ class RestApiService extends Rest {
         response = await _dio!.head(
           options.path,
           options: Options(headers: options.headers),
+          queryParameters: options.queryParameters,
         );
         break;
       default:
     }
 
-    return _returnResponse(response!, decode);
+    return response;
   }
 
   dynamic _returnResponse(Response response, bool decode) {
@@ -104,38 +122,15 @@ class RestApiService extends Rest {
     return response.data;
   }
 
-  String _getExceptionMessage(Object e) {
-    if (e is SocketException) {
-      return InternetConnectionException().toString();
-    }
+  ResponseInfo _getResponseInfo(Object e) {
+    String? message;
+    int? statusCode;
     if (e is DioError) {
-      switch (e.type) {
-        case DioErrorType.other:
-          return InternetConnectionException().toString();
-        case DioErrorType.response:
-          return _getStatusException(e.response!.statusCode!);
-        case DioErrorType.connectTimeout:
-          return WeakInternetConnection().toString();
-        case DioErrorType.sendTimeout:
-          break;
-        case DioErrorType.receiveTimeout:
-          break;
-        case DioErrorType.cancel:
-          break;
+      message = e.message;
+      if (e.response != null) {
+        statusCode = e.response!.statusCode;
       }
     }
-    return 'Unexpected Error';
-  }
-
-  String _getStatusException(int statusCode) {
-    Map<int, AppException> excptions = {
-      400: BadRequestException(),
-      404: NotFoundException(),
-      401: UnAuthorizedException(),
-    };
-    if (excptions[statusCode] == null) {
-      return FetchDataException(statusCode).toString();
-    }
-    return excptions[statusCode].toString();
+    return ResponseInfo(statusCode: statusCode, message: message);
   }
 }

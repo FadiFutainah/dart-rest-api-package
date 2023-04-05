@@ -1,21 +1,27 @@
 abstract class Rest {
   final String serverAddress;
   final Duration timeoutDuration;
+  final TokenType tokenType;
+  final Map<String, String>? requestHeaders;
 
   static const Map<String, String> defaultHeaders = {
     'Content-Type': 'application/json; charset=UTF-8',
     'Accept': 'application/json',
   };
 
-  Rest(this.serverAddress, this.timeoutDuration);
+  Rest(
+    this.serverAddress,
+    this.timeoutDuration,
+    this.tokenType, [
+    this.requestHeaders = defaultHeaders,
+  ]);
 
   Future request(
     String endpoint,
     HttpRequestType requestType, {
     Map<String, dynamic>? body,
-    Map<String, String> headers = defaultHeaders,
+    Map<String, String>? headers,
     bool sendToken = false,
-    TokenType tokenType = TokenType.access,
   });
 }
 
